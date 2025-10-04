@@ -144,16 +144,33 @@ static int handle_client_hello(int sockfd, struct sockaddr_in *client_addr,
 }
 
 int main(int argc, char *argv[]) {
+    const char *keyfile = "server_keys.conf";
+
     log_message(LOG_INFO, "Starting WireGuard Dynamic Server");
 
     if (crypto_init() != 0) {
         handle_error("Failed to initialize crypto");
     }
 
-    /* 鍵ペアを生成 */
-    if (generate_keypair(server_pubkey, server_privkey) != 0) {
-        handle_error("Failed to generate server keypair");
+    /* 鍵ペアを読み込み、存在しなければ生成 */
+    if (load_keypair_from_file(keyfile, server_pubkey, server_privkey) != 0) {
+        log_message(LOG_INFO, "Generating new server keypair...");
+        if (generate_keypair(server_pubkey, server_privkey) != 0) {
+            handle_error("Failed to generate server keypair");
+        }
+        if (save_keypair_to_file(keyfile, server_pubkey, server_privkey) != 0) {
+            handle_error("Failed to save server keypair");
+        }
     }
+
+    /* 公開鍵を表示（クライアントに配布するため） */
+    char pubkey_b64[64];
+    pubkey_to_base64(server_pubkey, pubkey_b64, sizeof(pubkey_b64));
+    log_message(LOG_INFO, "Server public key: %s", pubkey_b64);
+    printf("\n===========================================\n");
+    printf("Server Public Key (share with clients):\n");
+    printf("%s\n", pubkey_b64);
+    printf("===========================================\n\n");
 
     /* クライアントテーブルを初期化 */
     memset(clients, 0, sizeof(clients));
@@ -212,13 +229,22 @@ int main(int argc, char *argv[]) {
 
         log_message(LOG_DEBUG, "Received %zd bytes from client", n);
 
-        /* メッセージを復号化 */
+        /* メッセージをsealed boxで復号化 */
         uint8_t plaintext[MAX_BUFFER_SIZE];
         size_t plaintext_len;
 
-        /* 暗号化なしで処理（最初のメッセージは平文） */
+        if (decrypt_sealed(recv_buffer, n,
+                          server_pubkey, server_privkey,
+                          plaintext, &plaintext_len) != 0) {
+            log_message(LOG_ERROR, "Failed to decrypt message");
+            continue;
+        }
+
+        log_message(LOG_DEBUG, "Decrypted %zu bytes", plaintext_len);
+
+        /* メッセージをアンパック */
         protocol_message_t msg;
-        if (unpack_message(recv_buffer, n, &msg) != 0) {
+        if (unpack_message(plaintext, plaintext_len, &msg) != 0) {
             log_message(LOG_ERROR, "Failed to unpack message");
             continue;
         }

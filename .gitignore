@@ -9,3 +9,7 @@ build/
 # Executables
 server
 client
+
+# Key files
+*.conf
+*_keys.conf

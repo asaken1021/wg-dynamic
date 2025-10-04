@@ -15,25 +15,37 @@
 
 static uint8_t client_privkey[WG_KEY_LEN];
 static uint8_t client_pubkey[WG_KEY_LEN];
+static uint8_t server_pubkey[WG_KEY_LEN];
 
 static int send_client_hello(int sockfd, struct sockaddr_in *server_addr) {
     protocol_message_t msg;
     pack_client_hello(&msg, client_pubkey);
 
-    uint8_t send_buffer[MAX_BUFFER_SIZE];
-    send_buffer[0] = msg.type;
+    /* メッセージを平文バッファにパック */
+    uint8_t plaintext[MAX_BUFFER_SIZE];
+    plaintext[0] = msg.type;
     uint16_t len_net = htons(msg.length);
-    memcpy(send_buffer + 1, &len_net, sizeof(uint16_t));
-    memcpy(send_buffer + 3, msg.data, msg.length);
-    size_t send_len = 3 + msg.length;
+    memcpy(plaintext + 1, &len_net, sizeof(uint16_t));
+    memcpy(plaintext + 3, msg.data, msg.length);
+    size_t plaintext_len = 3 + msg.length;
 
-    if (sendto(sockfd, send_buffer, send_len, 0,
+    /* サーバーの公開鍵でsealed box暗号化 */
+    uint8_t ciphertext[MAX_BUFFER_SIZE];
+    size_t ciphertext_len;
+    if (encrypt_sealed(plaintext, plaintext_len,
+                      server_pubkey,
+                      ciphertext, &ciphertext_len) != 0) {
+        log_message(LOG_ERROR, "Failed to encrypt CLIENT_HELLO");
+        return -1;
+    }
+
+    if (sendto(sockfd, ciphertext, ciphertext_len, 0,
               (struct sockaddr *)server_addr, sizeof(*server_addr)) < 0) {
         log_message(LOG_ERROR, "Failed to send CLIENT_HELLO");
         return -1;
     }
 
-    log_message(LOG_INFO, "Sent CLIENT_HELLO to server");
+    log_message(LOG_INFO, "Sent encrypted CLIENT_HELLO to server");
     return 0;
 }
 
@@ -61,9 +73,18 @@ static int receive_server_config(int sockfd, client_config_t *config) {
     uint8_t plaintext[MAX_BUFFER_SIZE];
     size_t plaintext_len;
 
-    /* サーバーの公開鍵が必要だが、ここでは平文として扱う（簡略化） */
+    if (decrypt_message(recv_buffer, n,
+                       server_pubkey, client_privkey,
+                       plaintext, &plaintext_len) != 0) {
+        log_message(LOG_ERROR, "Failed to decrypt server response");
+        return -1;
+    }
+
+    log_message(LOG_DEBUG, "Decrypted %zu bytes", plaintext_len);
+
+    /* メッセージをアンパック */
     protocol_message_t msg;
-    if (unpack_message(recv_buffer, n, &msg) != 0) {
+    if (unpack_message(plaintext, plaintext_len, &msg) != 0) {
         log_message(LOG_ERROR, "Failed to unpack server response");
         return -1;
     }
@@ -119,8 +140,7 @@ static int apply_configuration(const client_config_t *config, const char *server
 
     /* サーバーをピアとして追加 */
     wg_peer_t server_peer;
-    /* サーバー公開鍵が必要（ここでは省略） */
-    memset(server_peer.public_key, 0, WG_KEY_LEN);
+    memcpy(server_peer.public_key, server_pubkey, WG_KEY_LEN);
     strncpy(server_peer.endpoint, server_endpoint, sizeof(server_peer.endpoint));
     strncpy(server_peer.allowed_ips, config->allowed_ips, sizeof(server_peer.allowed_ips));
     server_peer.persistent_keepalive = 25;
@@ -141,12 +161,13 @@ static int apply_configuration(const client_config_t *config, const char *server
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <server_address>\n", argv[0]);
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s <server_address> <server_pubkey_base64>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     char *server_address = argv[1];
+    char *server_pubkey_b64 = argv[2];
 
     log_message(LOG_INFO, "Starting WireGuard Dynamic Client");
 
@@ -158,6 +179,12 @@ int main(int argc, char *argv[]) {
     if (generate_keypair(client_pubkey, client_privkey) != 0) {
         handle_error("Failed to generate client keypair");
     }
+
+    /* サーバーの公開鍵を読み込み */
+    if (load_public_key(server_pubkey_b64, server_pubkey) != 0) {
+        handle_error("Failed to load server public key");
+    }
+    log_message(LOG_INFO, "Loaded server public key");
 
     /* UDPソケットを作成 */
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
