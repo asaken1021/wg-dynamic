@@ -9,7 +9,7 @@ int pack_client_hello(protocol_message_t *msg, const uint8_t *pubkey) {
     }
 
     msg->type = MSG_CLIENT_HELLO;
-    msg->length = htons(WG_KEY_LEN);
+    msg->length = WG_KEY_LEN;  /* ホストバイトオーダーで保持 */
     memcpy(msg->data, pubkey, WG_KEY_LEN);
 
     return 0;
@@ -46,7 +46,7 @@ int pack_server_config(protocol_message_t *msg, const client_config_t *config) {
     memcpy(ptr + offset, &port_net, sizeof(uint16_t));
     offset += sizeof(uint16_t);
 
-    msg->length = htons(offset);
+    msg->length = offset;  /* ホストバイトオーダーで保持 */
 
     return 0;
 }
