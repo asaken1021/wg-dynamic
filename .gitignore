@@ -2,3 +2,10 @@
 *.d
 *.md
 !README*.md
+
+# Build directory
+build/
+
+# Executables
+server
+client

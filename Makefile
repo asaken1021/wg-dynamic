@@ -6,8 +6,8 @@ SRC_DIR = src
 INC_DIR = include
 BUILD_DIR = build
 
-SERVER_TARGET = wg-dynamic-server
-CLIENT_TARGET = wg-dynamic-client
+SERVER_TARGET = server
+CLIENT_TARGET = client
 
 SERVER_SOURCES = $(SRC_DIR)/server.c $(SRC_DIR)/crypto.c $(SRC_DIR)/protocol.c $(SRC_DIR)/wg_interface.c $(SRC_DIR)/common.c
 CLIENT_SOURCES = $(SRC_DIR)/client.c $(SRC_DIR)/crypto.c $(SRC_DIR)/protocol.c $(SRC_DIR)/wg_interface.c $(SRC_DIR)/common.c
