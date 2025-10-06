@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200112L
 #include "config.h"
 #include "common.h"
 #include <stdio.h>
@@ -18,6 +19,10 @@ void init_default_config(server_config_t *config) {
     strncpy(config->allowed_ips, DEFAULT_ALLOWED_IPS, sizeof(config->allowed_ips) - 1);
     config->server_privkey[0] = '\0';
     config->privkey_loaded = false;
+    config->hook_pre_interface[0] = '\0';
+    config->hook_post_ready[0] = '\0';
+    config->hook_on_connect[0] = '\0';
+    config->hook_on_exit[0] = '\0';
 }
 
 int load_server_config(const char *filepath, server_config_t *config) {
@@ -90,6 +95,14 @@ int load_server_config(const char *filepath, server_config_t *config) {
                 strncpy(config->server_privkey, value, sizeof(config->server_privkey) - 1);
                 config->privkey_loaded = true;
             }
+        } else if (strcmp(key, "hook_pre_interface") == 0) {
+            strncpy(config->hook_pre_interface, value, sizeof(config->hook_pre_interface) - 1);
+        } else if (strcmp(key, "hook_post_ready") == 0) {
+            strncpy(config->hook_post_ready, value, sizeof(config->hook_post_ready) - 1);
+        } else if (strcmp(key, "hook_on_connect") == 0) {
+            strncpy(config->hook_on_connect, value, sizeof(config->hook_on_connect) - 1);
+        } else if (strcmp(key, "hook_on_exit") == 0) {
+            strncpy(config->hook_on_exit, value, sizeof(config->hook_on_exit) - 1);
         } else {
             log_message(LOG_WARN, "Unknown config key at line %d: %s", line_num, key);
         }
@@ -264,5 +277,41 @@ int remove_privkey_from_config(const char *filepath) {
     fclose(fp_write);
 
     rename(temp_file, filepath);
+    return 0;
+}
+
+int execute_hook(const char *script_path, const char *client_ip, const char *client_pubkey) {
+    if (!script_path || strlen(script_path) == 0) {
+        /* スクリプトが設定されていない場合は何もしない */
+        return 0;
+    }
+
+    log_message(LOG_INFO, "Executing hook script: %s", script_path);
+
+    /* 環境変数を設定 */
+    if (client_ip) {
+        setenv("WG_CLIENT_IP", client_ip, 1);
+    }
+    if (client_pubkey) {
+        setenv("WG_CLIENT_PUBKEY", client_pubkey, 1);
+    }
+
+    /* スクリプトを実行 */
+    int ret = system(script_path);
+
+    /* 環境変数をクリア */
+    if (client_ip) {
+        unsetenv("WG_CLIENT_IP");
+    }
+    if (client_pubkey) {
+        unsetenv("WG_CLIENT_PUBKEY");
+    }
+
+    if (ret != 0) {
+        log_message(LOG_WARN, "Hook script failed with exit code: %d", ret);
+        return -1;
+    }
+
+    log_message(LOG_DEBUG, "Hook script completed successfully");
     return 0;
 }

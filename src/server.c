@@ -32,6 +32,9 @@ static volatile sig_atomic_t running = 1;
 static void cleanup_and_exit(int exit_code) {
     log_message(LOG_INFO, "Cleaning up and shutting down...");
 
+    /* 終了フックを実行 */
+    execute_hook(server_config.hook_on_exit, NULL, NULL);
+
     /* インターフェイスを削除 */
     wg_delete_interface(server_config.interface);
 
@@ -145,6 +148,11 @@ static int handle_client_hello(int sockfd, struct sockaddr_in *client_addr,
         log_message(LOG_ERROR, "Failed to add peer to WireGuard");
         return -1;
     }
+
+    /* クライアント接続フックを実行 */
+    char temp_pubkey[64];
+    sodium_bin2base64(temp_pubkey, sizeof(temp_pubkey), client_pubkey, WG_KEY_LEN, sodium_base64_VARIANT_ORIGINAL);
+    execute_hook(server_config.hook_on_connect, client_ip, temp_pubkey);
 
     /* 設定を返送 */
     client_config_t config;
@@ -280,6 +288,9 @@ int main(int argc, char *argv[]) {
     printf("%s\n", pubkey_b64);
     printf("===========================================\n\n");
 
+    /* インターフェイス作成前のフックを実行 */
+    execute_hook(server_config.hook_pre_interface, NULL, NULL);
+
     /* WireGuardインターフェイスを作成 */
     log_message(LOG_INFO, "Creating WireGuard interface %s", server_config.interface);
     if (wg_create_interface(server_config.interface) != 0) {
@@ -322,6 +333,9 @@ int main(int argc, char *argv[]) {
     }
 
     log_message(LOG_INFO, "Server listening on port %d", server_config.config_server_port);
+
+    /* サーバー準備完了フックを実行 */
+    execute_hook(server_config.hook_post_ready, NULL, NULL);
 
     /* メインループ */
     while (running) {

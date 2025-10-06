@@ -18,6 +18,10 @@ typedef struct {
     char allowed_ips[256];        /* クライアントに渡すAllowedIPs (例: 10.0.0.0/24) */
     char server_privkey[64];      /* サーバー秘密鍵 (Base64, 設定ファイルから読み込み) */
     bool privkey_loaded;          /* 秘密鍵が読み込まれたか */
+    char hook_pre_interface[256]; /* インターフェイス作成前のフックスクリプト */
+    char hook_post_ready[256];    /* サーバー準備完了後のフックスクリプト */
+    char hook_on_connect[256];    /* クライアント接続時のフックスクリプト */
+    char hook_on_exit[256];       /* サーバー終了時のフックスクリプト */
 } server_config_t;
 
 /* デフォルト設定値 */
@@ -51,5 +55,8 @@ int ip_string_to_uint32(const char *ip_str, uint32_t *ip);
 
 /* uint32_tをIPアドレス文字列に変換 */
 void uint32_to_ip_string(uint32_t ip, char *ip_str, size_t len);
+
+/* フックスクリプトを実行 */
+int execute_hook(const char *script_path, const char *client_ip, const char *client_pubkey);
 
 #endif /* CONFIG_H */
