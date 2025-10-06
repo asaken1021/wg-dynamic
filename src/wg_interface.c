@@ -103,3 +103,39 @@ int wg_set_listen_port(const char *interface, uint16_t port) {
     log_message(LOG_INFO, "Setting listen port %u on interface %s", port, interface);
     return execute_command(cmd);
 }
+
+int wg_create_interface(const char *interface) {
+    if (!interface) {
+        return -1;
+    }
+
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "ip link add dev %s type wireguard", interface);
+
+    log_message(LOG_INFO, "Creating WireGuard interface %s", interface);
+    return execute_command(cmd);
+}
+
+int wg_delete_interface(const char *interface) {
+    if (!interface) {
+        return -1;
+    }
+
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "ip link delete dev %s", interface);
+
+    log_message(LOG_INFO, "Deleting interface %s", interface);
+    return execute_command(cmd);
+}
+
+int wg_interface_down(const char *interface) {
+    if (!interface) {
+        return -1;
+    }
+
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "ip link set %s down", interface);
+
+    log_message(LOG_INFO, "Bringing down interface %s", interface);
+    return execute_command(cmd);
+}

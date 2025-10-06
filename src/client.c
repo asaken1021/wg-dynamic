@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <signal.h>
 
 #define CLIENT_INTERFACE "wg0"
 #define TIMEOUT_SEC 5
@@ -16,6 +17,18 @@
 static uint8_t client_privkey[WG_KEY_LEN];
 static uint8_t client_pubkey[WG_KEY_LEN];
 static uint8_t server_pubkey[WG_KEY_LEN];
+static volatile sig_atomic_t running = 1;
+
+static void cleanup_and_exit(int exit_code) {
+    log_message(LOG_INFO, "Cleaning up and shutting down...");
+    wg_delete_interface(CLIENT_INTERFACE);
+    exit(exit_code);
+}
+
+static void signal_handler(int signum) {
+    log_message(LOG_INFO, "Received signal %d, shutting down...", signum);
+    running = 0;
+}
 
 static int send_client_hello(int sockfd, struct sockaddr_in *server_addr) {
     protocol_message_t msg;
@@ -171,6 +184,10 @@ int main(int argc, char *argv[]) {
 
     log_message(LOG_INFO, "Starting WireGuard Dynamic Client");
 
+    /* シグナルハンドラを設定 */
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+
     if (crypto_init() != 0) {
         handle_error("Failed to initialize crypto");
     }
@@ -185,6 +202,12 @@ int main(int argc, char *argv[]) {
         handle_error("Failed to load server public key");
     }
     log_message(LOG_INFO, "Loaded server public key");
+
+    /* WireGuardインターフェイスを作成 */
+    log_message(LOG_INFO, "Creating WireGuard interface %s", CLIENT_INTERFACE);
+    if (wg_create_interface(CLIENT_INTERFACE) != 0) {
+        log_message(LOG_WARN, "Interface may already exist, continuing...");
+    }
 
     /* UDPソケットを作成 */
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -218,12 +241,20 @@ int main(int argc, char *argv[]) {
              server_address, config.server_port);
 
     if (apply_configuration(&config, server_endpoint) != 0) {
-        handle_error("Failed to apply configuration");
+        cleanup_and_exit(EXIT_FAILURE);
     }
+
+    close(sockfd);
 
     log_message(LOG_INFO, "Client configured successfully!");
     log_message(LOG_INFO, "Interface: %s, IP: %s", CLIENT_INTERFACE, config.client_ip);
+    log_message(LOG_INFO, "Client is running. Press Ctrl+C to stop.");
 
-    close(sockfd);
-    return EXIT_SUCCESS;
+    /* メインループ（シグナルを待つ） */
+    while (running) {
+        sleep(1);
+    }
+
+    /* クリーンアップして終了 */
+    cleanup_and_exit(EXIT_SUCCESS);
 }

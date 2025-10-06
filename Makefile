@@ -9,7 +9,7 @@ BUILD_DIR = build
 SERVER_TARGET = server
 CLIENT_TARGET = client
 
-SERVER_SOURCES = $(SRC_DIR)/server.c $(SRC_DIR)/crypto.c $(SRC_DIR)/protocol.c $(SRC_DIR)/wg_interface.c $(SRC_DIR)/common.c
+SERVER_SOURCES = $(SRC_DIR)/server.c $(SRC_DIR)/crypto.c $(SRC_DIR)/protocol.c $(SRC_DIR)/wg_interface.c $(SRC_DIR)/common.c $(SRC_DIR)/config.c
 CLIENT_SOURCES = $(SRC_DIR)/client.c $(SRC_DIR)/crypto.c $(SRC_DIR)/protocol.c $(SRC_DIR)/wg_interface.c $(SRC_DIR)/common.c
 
 SERVER_OBJECTS = $(SERVER_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)

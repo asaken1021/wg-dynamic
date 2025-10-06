@@ -33,4 +33,13 @@ int wg_set_private_key(const char *interface, const uint8_t *private_key);
 /* WireGuardインターフェイスのリスニングポートを設定 */
 int wg_set_listen_port(const char *interface, uint16_t port);
 
+/* WireGuardインターフェイスを作成 */
+int wg_create_interface(const char *interface);
+
+/* WireGuardインターフェイスを削除 */
+int wg_delete_interface(const char *interface);
+
+/* WireGuardインターフェイスを停止 */
+int wg_interface_down(const char *interface);
+
 #endif /* WG_INTERFACE_H */

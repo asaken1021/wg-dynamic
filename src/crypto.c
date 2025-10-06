@@ -110,17 +110,20 @@ int load_private_key(const char *key_str, uint8_t *privkey) {
         return -1;
     }
 
+    size_t key_str_len = strlen(key_str);
+    log_message(LOG_DEBUG, "Decoding private key: length=%zu", key_str_len);
+
     size_t bin_len;
     if (sodium_base642bin(privkey, WG_KEY_LEN,
-                         key_str, strlen(key_str),
+                         key_str, key_str_len,
                          NULL, &bin_len, NULL,
                          sodium_base64_VARIANT_ORIGINAL) != 0) {
-        log_message(LOG_ERROR, "Failed to decode private key");
+        log_message(LOG_ERROR, "Failed to decode private key (input length: %zu)", key_str_len);
         return -1;
     }
 
     if (bin_len != WG_KEY_LEN) {
-        log_message(LOG_ERROR, "Invalid private key length");
+        log_message(LOG_ERROR, "Invalid private key length: got %zu, expected %d", bin_len, WG_KEY_LEN);
         return -1;
     }
 
