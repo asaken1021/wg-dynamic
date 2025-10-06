@@ -2,6 +2,7 @@
 #define WG_INTERFACE_H
 
 #include "common.h"
+#include <stddef.h>
 
 /* WireGuardインターフェイス設定 */
 typedef struct {
@@ -41,5 +42,18 @@ int wg_delete_interface(const char *interface);
 
 /* WireGuardインターフェイスを停止 */
 int wg_interface_down(const char *interface);
+
+/* ルートを追加 */
+int wg_add_route(const char *destination, const char *interface);
+
+/* ルートを削除 */
+int wg_delete_route(const char *destination, const char *interface);
+
+/* AllowedIPsを正規化（コンマ+スペース区切りをコンマのみに変換） */
+void normalize_allowed_ips(const char *input, char *output, size_t output_size);
+
+/* AllowedIPsを分割して各CIDRに対してコールバック関数を実行 */
+typedef void (*cidr_callback_t)(const char *cidr, void *user_data);
+void foreach_cidr(const char *allowed_ips, cidr_callback_t callback, void *user_data);
 
 #endif /* WG_INTERFACE_H */

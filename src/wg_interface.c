@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "wg_interface.h"
 #include "common.h"
 #include <stdio.h>
@@ -138,4 +139,91 @@ int wg_interface_down(const char *interface) {
 
     log_message(LOG_INFO, "Bringing down interface %s", interface);
     return execute_command(cmd);
+}
+
+int wg_add_route(const char *destination, const char *interface) {
+    if (!destination || !interface) {
+        return -1;
+    }
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "ip route add %s dev %s", destination, interface);
+
+    log_message(LOG_INFO, "Adding route to %s via %s", destination, interface);
+    return execute_command(cmd);
+}
+
+int wg_delete_route(const char *destination, const char *interface) {
+    if (!destination || !interface) {
+        return -1;
+    }
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "ip route del %s dev %s 2>/dev/null", destination, interface);
+
+    log_message(LOG_INFO, "Deleting route to %s via %s", destination, interface);
+    return execute_command(cmd);
+}
+
+void normalize_allowed_ips(const char *input, char *output, size_t output_size) {
+    if (!input || !output || output_size == 0) {
+        return;
+    }
+
+    size_t in_pos = 0;
+    size_t out_pos = 0;
+    size_t input_len = strlen(input);
+
+    while (in_pos < input_len && out_pos < output_size - 1) {
+        char c = input[in_pos];
+
+        if (c == ',') {
+            /* コンマを出力 */
+            output[out_pos++] = ',';
+            in_pos++;
+
+            /* コンマの後のスペースをスキップ */
+            while (in_pos < input_len && (input[in_pos] == ' ' || input[in_pos] == '\t')) {
+                in_pos++;
+            }
+        } else {
+            /* そのまま出力 */
+            output[out_pos++] = c;
+            in_pos++;
+        }
+    }
+
+    output[out_pos] = '\0';
+}
+
+void foreach_cidr(const char *allowed_ips, cidr_callback_t callback, void *user_data) {
+    if (!allowed_ips || !callback) {
+        return;
+    }
+
+    char buffer[1024];
+    strncpy(buffer, allowed_ips, sizeof(buffer) - 1);
+    buffer[sizeof(buffer) - 1] = '\0';
+
+    char *saveptr;
+    char *token = strtok_r(buffer, ",", &saveptr);
+
+    while (token != NULL) {
+        /* 前後の空白を削除 */
+        while (*token == ' ' || *token == '\t') {
+            token++;
+        }
+
+        char *end = token + strlen(token) - 1;
+        while (end > token && (*end == ' ' || *end == '\t')) {
+            *end = '\0';
+            end--;
+        }
+
+        if (strlen(token) > 0) {
+            callback(token, user_data);
+        }
+
+        token = strtok_r(NULL, ",", &saveptr);
+    }
 }

@@ -18,9 +18,33 @@ static uint8_t client_privkey[WG_KEY_LEN];
 static uint8_t client_pubkey[WG_KEY_LEN];
 static uint8_t server_pubkey[WG_KEY_LEN];
 static volatile sig_atomic_t running = 1;
+static char client_allowed_ips[256] = {0};
+
+/* ルート削除用のコールバック */
+static void delete_route_callback(const char *cidr, void *user_data) {
+    const char *interface = (const char *)user_data;
+    wg_delete_route(cidr, interface);
+}
+
+/* ルート追加用のコールバック */
+static void add_route_callback(const char *cidr, void *user_data) {
+    const char *interface = (const char *)user_data;
+    if (wg_add_route(cidr, interface) != 0) {
+        log_message(LOG_WARN, "Failed to add route for %s (may already exist)", cidr);
+    } else {
+        log_message(LOG_INFO, "Added route: %s via %s", cidr, interface);
+    }
+}
 
 static void cleanup_and_exit(int exit_code) {
     log_message(LOG_INFO, "Cleaning up and shutting down...");
+
+    /* 各CIDRのルートを削除 */
+    if (strlen(client_allowed_ips) > 0) {
+        foreach_cidr(client_allowed_ips, delete_route_callback, (void *)CLIENT_INTERFACE);
+    }
+
+    /* インターフェイスを削除 */
     wg_delete_interface(CLIENT_INTERFACE);
     exit(exit_code);
 }
@@ -151,11 +175,15 @@ static int apply_configuration(const client_config_t *config, const char *server
         return -1;
     }
 
+    /* AllowedIPsを正規化（コンマ+スペースをコンマのみに） */
+    char normalized_allowed_ips[256];
+    normalize_allowed_ips(config->allowed_ips, normalized_allowed_ips, sizeof(normalized_allowed_ips));
+
     /* サーバーをピアとして追加 */
     wg_peer_t server_peer;
     memcpy(server_peer.public_key, server_pubkey, WG_KEY_LEN);
     strncpy(server_peer.endpoint, server_endpoint, sizeof(server_peer.endpoint));
-    strncpy(server_peer.allowed_ips, config->allowed_ips, sizeof(server_peer.allowed_ips));
+    strncpy(server_peer.allowed_ips, normalized_allowed_ips, sizeof(server_peer.allowed_ips));
     server_peer.persistent_keepalive = 25;
 
     if (wg_add_peer(CLIENT_INTERFACE, &server_peer) != 0) {
@@ -168,6 +196,12 @@ static int apply_configuration(const client_config_t *config, const char *server
         log_message(LOG_ERROR, "Failed to bring interface up");
         return -1;
     }
+
+    /* 元のAllowedIPsを保存（ルート削除用） */
+    strncpy(client_allowed_ips, config->allowed_ips, sizeof(client_allowed_ips) - 1);
+
+    /* 各CIDRごとにルートを追加 */
+    foreach_cidr(config->allowed_ips, add_route_callback, (void *)CLIENT_INTERFACE);
 
     log_message(LOG_INFO, "WireGuard configuration applied successfully");
     return 0;
