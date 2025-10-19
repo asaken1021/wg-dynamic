@@ -238,7 +238,6 @@ int main(int argc, char *argv[]) {
     log_message(LOG_INFO, "Loaded server public key");
 
     /* WireGuardインターフェイスを作成 */
-    log_message(LOG_INFO, "Creating WireGuard interface %s", CLIENT_INTERFACE);
     if (wg_create_interface(CLIENT_INTERFACE) != 0) {
         log_message(LOG_WARN, "Interface may already exist, continuing...");
     }

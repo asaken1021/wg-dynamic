@@ -262,7 +262,7 @@ int main(int argc, char *argv[]) {
         log_message(LOG_INFO, "Loaded server keys from configuration");
     } else {
         /* 一時的な鍵ペアを生成 */
-        log_message(LOG_INFO, "Generating temporary server keypair (not saved to config)...");
+        log_message(LOG_INFO, "Generating temporary server keypair...");
         if (generate_keypair(server_pubkey, server_privkey) != 0) {
             handle_error("Failed to generate server keypair");
         }
@@ -277,7 +277,7 @@ int main(int argc, char *argv[]) {
     char pubkey_b64[64];
     pubkey_to_base64(server_pubkey, pubkey_b64, sizeof(pubkey_b64));
     log_message(LOG_INFO, "Server public key: %s", pubkey_b64);
-    
+
     log_message(LOG_INFO, "");
     log_message(LOG_INFO, "============================================");
     log_message(LOG_INFO, "Server Public Key (share with clients):");
@@ -289,7 +289,6 @@ int main(int argc, char *argv[]) {
     execute_hook(server_config.hook_pre_interface, NULL, NULL);
 
     /* WireGuardインターフェイスを作成 */
-    log_message(LOG_INFO, "Creating WireGuard interface %s", server_config.interface);
     if (wg_create_interface(server_config.interface) != 0) {
         log_message(LOG_WARN, "Interface may already exist, continuing...");
     }
