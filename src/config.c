@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 void init_default_config(server_config_t *config) {
     if (!config) {
@@ -288,27 +290,44 @@ int execute_hook(const char *script_path, const char *client_ip, const char *cli
 
     log_message(LOG_INFO, "Executing hook script: %s", script_path);
 
-    /* 環境変数を設定 */
-    if (client_ip) {
-        setenv("WG_CLIENT_IP", client_ip, 1);
-    }
-    if (client_pubkey) {
-        setenv("WG_CLIENT_PUBKEY", client_pubkey, 1);
+    pid_t pid = fork();
+    if (pid < 0) {
+        log_message(LOG_ERROR, "fork() failed");
+        return -1;
     }
 
-    /* スクリプトを実行 */
-    int ret = system(script_path);
+    if (pid == 0) {
+        /* 子プロセス */
+        /* 環境変数を設定 */
+        if (client_ip) {
+            setenv("WG_CLIENT_IP", client_ip, 1);
+        }
+        if (client_pubkey) {
+            setenv("WG_CLIENT_PUBKEY", client_pubkey, 1);
+        }
 
-    /* 環境変数をクリア */
-    if (client_ip) {
-        unsetenv("WG_CLIENT_IP");
-    }
-    if (client_pubkey) {
-        unsetenv("WG_CLIENT_PUBKEY");
+        /* シェル経由でスクリプトを実行 */
+        char *argv[] = {"/bin/sh", "-c", (char *)script_path, NULL};
+        execvp("/bin/sh", argv);
+        perror("execvp failed");
+        _exit(127);
     }
 
-    if (ret != 0) {
-        log_message(LOG_WARN, "Hook script failed with exit code: %d", ret);
+    /* 親プロセス: 子プロセスの終了を待つ */
+    int status;
+    if (waitpid(pid, &status, 0) < 0) {
+        log_message(LOG_ERROR, "waitpid() failed");
+        return -1;
+    }
+
+    if (WIFEXITED(status)) {
+        int exit_code = WEXITSTATUS(status);
+        if (exit_code != 0) {
+            log_message(LOG_WARN, "Hook script failed with exit code: %d", exit_code);
+            return -1;
+        }
+    } else {
+        log_message(LOG_ERROR, "Hook script terminated abnormally");
         return -1;
     }
 
