@@ -41,12 +41,6 @@ void init_default_config(server_config_t *config);
 /* 設定を表示 */
 void print_config(const server_config_t *config);
 
-/* 設定ファイルに秘密鍵を保存 */
-int save_privkey_to_config(const char *filepath, const char *privkey_b64);
-
-/* 設定ファイルから秘密鍵を削除 */
-int remove_privkey_from_config(const char *filepath);
-
 /* CIDR表記からIPアドレス範囲を解析 */
 int parse_cidr(const char *cidr, uint32_t *network, uint32_t *netmask, int *prefix_len);
 

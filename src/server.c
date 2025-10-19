@@ -261,18 +261,12 @@ int main(int argc, char *argv[]) {
         }
         log_message(LOG_INFO, "Loaded server keys from configuration");
     } else {
-        /* 新しい鍵ペアを生成 */
-        log_message(LOG_INFO, "Generating new server keypair...");
+        /* 一時的な鍵ペアを生成 */
+        log_message(LOG_INFO, "Generating temporary server keypair (not saved to config)...");
         if (generate_keypair(server_pubkey, server_privkey) != 0) {
             handle_error("Failed to generate server keypair");
         }
-
-        /* 秘密鍵をserver.confに保存 */
-        char privkey_b64[64];
-        privkey_to_base64(server_privkey, privkey_b64, sizeof(privkey_b64));
-        if (save_privkey_to_config(config_file, privkey_b64) != 0) {
-            log_message(LOG_WARN, "Failed to save private key to config file");
-        }
+        log_message(LOG_WARN, "Using temporary keypair. Add server_privkey to config to persist keys.");
     }
 
     /* シグナルハンドラを設定 */
@@ -283,10 +277,13 @@ int main(int argc, char *argv[]) {
     char pubkey_b64[64];
     pubkey_to_base64(server_pubkey, pubkey_b64, sizeof(pubkey_b64));
     log_message(LOG_INFO, "Server public key: %s", pubkey_b64);
-    printf("\n===========================================\n");
-    printf("Server Public Key (share with clients):\n");
-    printf("%s\n", pubkey_b64);
-    printf("===========================================\n\n");
+    
+    log_message(LOG_INFO, "");
+    log_message(LOG_INFO, "============================================");
+    log_message(LOG_INFO, "Server Public Key (share with clients):");
+    log_message(LOG_INFO, "%s", pubkey_b64);
+    log_message(LOG_INFO, "============================================");
+    log_message(LOG_INFO, "");
 
     /* インターフェイス作成前のフックを実行 */
     execute_hook(server_config.hook_pre_interface, NULL, NULL);

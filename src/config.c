@@ -127,7 +127,7 @@ void print_config(const server_config_t *config) {
     log_message(LOG_INFO, "Config Server Port: %u", config->config_server_port);
     log_message(LOG_INFO, "Client IP Pool: %s", config->client_ip_pool);
     log_message(LOG_INFO, "Allowed IPs: %s", config->allowed_ips);
-    log_message(LOG_INFO, "===========================");
+    log_message(LOG_INFO, "============================");
 }
 
 int ip_string_to_uint32(const char *ip_str, uint32_t *ip) {
@@ -197,88 +197,6 @@ int parse_cidr(const char *cidr, uint32_t *network, uint32_t *netmask, int *pref
     /* ネットワークアドレスを正規化 */
     *network = *network & *netmask;
 
-    return 0;
-}
-
-int save_privkey_to_config(const char *filepath, const char *privkey_b64) {
-    if (!filepath || !privkey_b64) {
-        return -1;
-    }
-
-    /* 既存の設定ファイルを読み込み */
-    FILE *fp_read = fopen(filepath, "r");
-    if (!fp_read) {
-        log_message(LOG_ERROR, "Config file not found: %s", filepath);
-        return -1;
-    }
-
-    /* 一時ファイルに書き込み */
-    char temp_file[512];
-    snprintf(temp_file, sizeof(temp_file), "%s.tmp", filepath);
-    FILE *fp_write = fopen(temp_file, "w");
-    if (!fp_write) {
-        fclose(fp_read);
-        log_message(LOG_ERROR, "Failed to create temp file: %s", temp_file);
-        return -1;
-    }
-
-    char line[MAX_CONFIG_LINE];
-
-    /* 既存の設定をコピー（server_privkey行は除外） */
-    while (fgets(line, sizeof(line), fp_read)) {
-        if (strncmp(line, "server_privkey=", 15) == 0) {
-            continue;  /* この行はスキップ */
-        }
-        fputs(line, fp_write);
-    }
-
-    /* 秘密鍵を追加 */
-    fprintf(fp_write, "\n# Server private key (auto-generated)\nserver_privkey=%s\n", privkey_b64);
-
-    fclose(fp_read);
-    fclose(fp_write);
-
-    /* 一時ファイルを元のファイルに置き換え */
-    if (rename(temp_file, filepath) != 0) {
-        log_message(LOG_ERROR, "Failed to update config file");
-        return -1;
-    }
-
-    log_message(LOG_INFO, "Server private key saved to %s", filepath);
-    return 0;
-}
-
-int remove_privkey_from_config(const char *filepath) {
-    if (!filepath) {
-        return -1;
-    }
-
-    FILE *fp_read = fopen(filepath, "r");
-    if (!fp_read) {
-        return -1;
-    }
-
-    char temp_file[512];
-    snprintf(temp_file, sizeof(temp_file), "%s.tmp", filepath);
-    FILE *fp_write = fopen(temp_file, "w");
-    if (!fp_write) {
-        fclose(fp_read);
-        return -1;
-    }
-
-    char line[MAX_CONFIG_LINE];
-
-    /* server_privkey行を除外してコピー */
-    while (fgets(line, sizeof(line), fp_read)) {
-        if (strncmp(line, "server_privkey=", 15) != 0) {
-            fputs(line, fp_write);
-        }
-    }
-
-    fclose(fp_read);
-    fclose(fp_write);
-
-    rename(temp_file, filepath);
     return 0;
 }
 
