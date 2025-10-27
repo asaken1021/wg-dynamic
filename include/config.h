@@ -18,6 +18,8 @@ typedef struct {
     char allowed_ips[256];        /* クライアントに渡すAllowedIPs (例: 10.0.0.0/24) */
     char server_privkey[64];      /* サーバー秘密鍵 (Base64, 設定ファイルから読み込み) */
     bool privkey_loaded;          /* 秘密鍵が読み込まれたか */
+    uint32_t lease_timeout;       /* クライアントリースタイムアウト (秒) */
+    uint32_t heartbeat_interval;  /* クライアントハートビート間隔 (秒) */
     char hook_pre_interface[256]; /* インターフェイス作成前のフックスクリプト */
     char hook_post_ready[256];    /* サーバー準備完了後のフックスクリプト */
     char hook_on_connect[256];    /* クライアント接続時のフックスクリプト */
@@ -31,6 +33,8 @@ typedef struct {
 #define DEFAULT_CONFIG_SERVER_PORT 51821
 #define DEFAULT_CLIENT_IP_POOL "10.0.0.0/24"
 #define DEFAULT_ALLOWED_IPS "10.0.0.0/24"
+#define DEFAULT_LEASE_TIMEOUT 300      /* 5分 */
+#define DEFAULT_HEARTBEAT_INTERVAL 60  /* 1分 */
 
 /* 設定ファイルを読み込む */
 int load_server_config(const char *filepath, server_config_t *config);

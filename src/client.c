@@ -2,6 +2,7 @@
 #include "crypto.h"
 #include "protocol.h"
 #include "wg_interface.h"
+#include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <signal.h>
+#include <time.h>
 
 #define CLIENT_INTERFACE "wg0"
 #define TIMEOUT_SEC 5
@@ -86,6 +88,38 @@ static int send_client_hello(int sockfd, struct sockaddr_in *server_addr) {
     return 0;
 }
 
+static int send_heartbeat(int sockfd, struct sockaddr_in *server_addr) {
+    protocol_message_t msg;
+    pack_heartbeat(&msg, client_pubkey);
+
+    /* メッセージを平文バッファにパック */
+    uint8_t plaintext[MAX_BUFFER_SIZE];
+    plaintext[0] = msg.type;
+    uint16_t len_net = htons(msg.length);
+    memcpy(plaintext + 1, &len_net, sizeof(uint16_t));
+    memcpy(plaintext + 3, msg.data, msg.length);
+    size_t plaintext_len = 3 + msg.length;
+
+    /* サーバーの公開鍵でsealed box暗号化 */
+    uint8_t ciphertext[MAX_BUFFER_SIZE];
+    size_t ciphertext_len;
+    if (encrypt_sealed(plaintext, plaintext_len,
+                      server_pubkey,
+                      ciphertext, &ciphertext_len) != 0) {
+        log_message(LOG_ERROR, "Failed to encrypt heartbeat");
+        return -1;
+    }
+
+    if (sendto(sockfd, ciphertext, ciphertext_len, 0,
+              (struct sockaddr *)server_addr, sizeof(*server_addr)) < 0) {
+        log_message(LOG_ERROR, "Failed to send heartbeat");
+        return -1;
+    }
+
+    log_message(LOG_DEBUG, "Sent heartbeat to server");
+    return 0;
+}
+
 static int receive_server_config(int sockfd, client_config_t *config) {
     uint8_t recv_buffer[MAX_BUFFER_SIZE];
     struct sockaddr_in from_addr;
@@ -155,9 +189,16 @@ static int receive_server_config(int sockfd, client_config_t *config) {
     uint16_t port_net;
     memcpy(&port_net, ptr + offset, sizeof(uint16_t));
     config->server_port = ntohs(port_net);
+    offset += sizeof(uint16_t);
 
-    log_message(LOG_INFO, "Received configuration: IP=%s, AllowedIPs=%s, Port=%u",
-               config->client_ip, config->allowed_ips, config->server_port);
+    /* ハートビート間隔 */
+    uint32_t interval_net;
+    memcpy(&interval_net, ptr + offset, sizeof(uint32_t));
+    config->heartbeat_interval = ntohl(interval_net);
+    offset += sizeof(uint32_t);
+
+    log_message(LOG_INFO, "Received configuration: IP=%s, AllowedIPs=%s, Port=%u, Heartbeat=%us",
+               config->client_ip, config->allowed_ips, config->server_port, config->heartbeat_interval);
 
     return 0;
 }
@@ -277,17 +318,31 @@ int main(int argc, char *argv[]) {
         cleanup_and_exit(EXIT_FAILURE);
     }
 
-    close(sockfd);
-
     log_message(LOG_INFO, "Client configured successfully!");
     log_message(LOG_INFO, "Interface: %s, IP: %s", CLIENT_INTERFACE, config.client_ip);
+    log_message(LOG_INFO, "Heartbeat interval: %u seconds", config.heartbeat_interval);
     log_message(LOG_INFO, "Client is running. Press Ctrl+C to stop.");
 
-    /* メインループ（シグナルを待つ） */
+    /* ハートビート送信ループ */
+    /* サーバーから受信したハートビート間隔を使用 */
+    uint32_t heartbeat_interval = config.heartbeat_interval;
+    time_t last_heartbeat = time(NULL);
+
     while (running) {
+        time_t now = time(NULL);
+
+        /* ハートビートを送信 */
+        if (now - last_heartbeat >= heartbeat_interval) {
+            if (send_heartbeat(sockfd, &server_addr) != 0) {
+                log_message(LOG_WARN, "Failed to send heartbeat, retrying...");
+            }
+            last_heartbeat = now;
+        }
+
         sleep(1);
     }
 
+    close(sockfd);
     /* クリーンアップして終了 */
     cleanup_and_exit(EXIT_SUCCESS);
 }

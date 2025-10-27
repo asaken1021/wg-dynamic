@@ -75,6 +75,8 @@ void init_default_config(server_config_t *config) {
     strncpy(config->allowed_ips, DEFAULT_ALLOWED_IPS, sizeof(config->allowed_ips) - 1);
     config->server_privkey[0] = '\0';
     config->privkey_loaded = false;
+    config->lease_timeout = DEFAULT_LEASE_TIMEOUT;
+    config->heartbeat_interval = DEFAULT_HEARTBEAT_INTERVAL;
     config->hook_pre_interface[0] = '\0';
     config->hook_post_ready[0] = '\0';
     config->hook_on_connect[0] = '\0';
@@ -159,6 +161,18 @@ int load_server_config(const char *filepath, server_config_t *config) {
             if (strlen(value) > 0) {
                 strncpy(config->server_privkey, value, sizeof(config->server_privkey) - 1);
                 config->privkey_loaded = true;
+            }
+        } else if (strcmp(key, "lease_timeout") == 0) {
+            config->lease_timeout = (uint32_t)atoi(value);
+            if (config->lease_timeout < 10) {
+                log_message(LOG_WARN, "lease_timeout too small, using minimum of 10 seconds");
+                config->lease_timeout = 10;
+            }
+        } else if (strcmp(key, "heartbeat_interval") == 0) {
+            config->heartbeat_interval = (uint32_t)atoi(value);
+            if (config->heartbeat_interval < 5) {
+                log_message(LOG_WARN, "heartbeat_interval too small, using minimum of 5 seconds");
+                config->heartbeat_interval = 5;
             }
         } else if (strcmp(key, "hook_pre_interface") == 0) {
             strncpy(config->hook_pre_interface, value, sizeof(config->hook_pre_interface) - 1);

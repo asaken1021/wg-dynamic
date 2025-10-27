@@ -22,6 +22,9 @@ typedef struct {
 /* WireGuardインターフェイスにピアを追加 */
 int wg_add_peer(const char *interface, const wg_peer_t *peer);
 
+/* WireGuardインターフェイスからピアを削除 */
+int wg_remove_peer(const char *interface, const uint8_t *public_key);
+
 /* WireGuardインターフェイスのIPアドレスを設定 */
 int wg_set_interface_ip(const char *interface, const char *ip_addr, int prefix_len);
 

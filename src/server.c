@@ -9,13 +9,17 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sodium.h>
 #include <signal.h>
+#include <time.h>
+#include <errno.h>
 
 typedef struct {
     uint8_t pubkey[WG_KEY_LEN];
     uint32_t ip_address;  /* ホストバイトオーダー */
     bool assigned;
+    time_t lease_expiry;  /* リース有効期限（UNIXタイムスタンプ） */
 } client_entry_t;
 
 static client_entry_t *clients = NULL;
@@ -87,6 +91,41 @@ static int find_free_ip(uint32_t *ip_out) {
     return -1;
 }
 
+static void check_expired_leases(void) {
+    time_t now = time(NULL);
+
+    for (size_t i = 0; i < max_clients; i++) {
+        if (clients[i].assigned && clients[i].lease_expiry <= now) {
+            char ip_str[INET_ADDRSTRLEN];
+            uint32_to_ip_string(clients[i].ip_address, ip_str, sizeof(ip_str));
+
+            log_message(LOG_INFO, "Lease expired for client with IP %s, releasing", ip_str);
+
+            /* WireGuardピアを削除 */
+            wg_remove_peer(server_config.interface, clients[i].pubkey);
+
+            /* クライアントエントリをクリア */
+            clients[i].assigned = false;
+            memset(clients[i].pubkey, 0, WG_KEY_LEN);
+            clients[i].ip_address = 0;
+            clients[i].lease_expiry = 0;
+        }
+    }
+}
+
+static int renew_client_lease(const uint8_t *client_pubkey) {
+    for (size_t i = 0; i < max_clients; i++) {
+        if (clients[i].assigned &&
+            memcmp(clients[i].pubkey, client_pubkey, WG_KEY_LEN) == 0) {
+            clients[i].lease_expiry = time(NULL) + server_config.lease_timeout;
+            log_message(LOG_DEBUG, "Renewed lease for client");
+            return 0;
+        }
+    }
+    log_message(LOG_WARN, "Cannot renew lease: client not found");
+    return -1;
+}
+
 static int assign_client_ip(const uint8_t *client_pubkey, char *ip_out) {
     /* 既に割り当てられているか確認 */
     for (size_t i = 0; i < max_clients; i++) {
@@ -94,6 +133,8 @@ static int assign_client_ip(const uint8_t *client_pubkey, char *ip_out) {
             memcmp(clients[i].pubkey, client_pubkey, WG_KEY_LEN) == 0) {
             uint32_to_ip_string(clients[i].ip_address, ip_out, INET_ADDRSTRLEN);
             log_message(LOG_INFO, "Client already has IP: %s", ip_out);
+            /* リースを更新 */
+            clients[i].lease_expiry = time(NULL) + server_config.lease_timeout;
             return 0;
         }
     }
@@ -111,6 +152,7 @@ static int assign_client_ip(const uint8_t *client_pubkey, char *ip_out) {
             memcpy(clients[i].pubkey, client_pubkey, WG_KEY_LEN);
             clients[i].ip_address = new_ip;
             clients[i].assigned = true;
+            clients[i].lease_expiry = time(NULL) + server_config.lease_timeout;
             uint32_to_ip_string(new_ip, ip_out, INET_ADDRSTRLEN);
             log_message(LOG_INFO, "Assigned IP %s to new client", ip_out);
             return 0;
@@ -160,6 +202,7 @@ static int handle_client_hello(int sockfd, struct sockaddr_in *client_addr,
     strncpy(config.client_ip, client_ip, INET_ADDRSTRLEN);
     strncpy(config.allowed_ips, server_config.allowed_ips, sizeof(config.allowed_ips));
     config.server_port = server_config.wg_listen_port;
+    config.heartbeat_interval = server_config.heartbeat_interval;
 
     protocol_message_t response;
     pack_server_config(&response, &config);
@@ -318,6 +361,14 @@ int main(int argc, char *argv[]) {
         handle_error("Failed to create socket");
     }
 
+    /* ソケットにタイムアウトを設定 */
+    struct timeval tv;
+    tv.tv_sec = 10;  /* 10秒ごとにリースをチェック */
+    tv.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+        log_message(LOG_WARN, "Failed to set socket timeout");
+    }
+
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
@@ -334,6 +385,7 @@ int main(int argc, char *argv[]) {
     execute_hook(server_config.hook_post_ready, NULL, NULL);
 
     /* メインループ */
+    time_t last_lease_check = time(NULL);
     while (running) {
         uint8_t recv_buffer[MAX_BUFFER_SIZE];
         struct sockaddr_in client_addr;
@@ -341,11 +393,24 @@ int main(int argc, char *argv[]) {
 
         ssize_t n = recvfrom(sockfd, recv_buffer, sizeof(recv_buffer), 0,
                             (struct sockaddr *)&client_addr, &client_len);
+
+        /* タイムアウトまたはエラーの場合、リースチェックを実行 */
+        time_t now = time(NULL);
         if (n < 0) {
-            if (running) {
-                log_message(LOG_ERROR, "recvfrom failed");
+            if (now - last_lease_check >= 10) {
+                check_expired_leases();
+                last_lease_check = now;
+            }
+            if (running && errno != EAGAIN && errno != EWOULDBLOCK) {
+                log_message(LOG_ERROR, "recvfrom failed: %s", strerror(errno));
             }
             continue;
+        }
+
+        /* 定期的にリースをチェック */
+        if (now - last_lease_check >= 10) {
+            check_expired_leases();
+            last_lease_check = now;
         }
 
         log_message(LOG_DEBUG, "Received %zd bytes from client", n);
@@ -372,6 +437,13 @@ int main(int argc, char *argv[]) {
 
         if (msg.type == MSG_CLIENT_HELLO) {
             handle_client_hello(sockfd, &client_addr, &msg);
+        } else if (msg.type == MSG_HEARTBEAT) {
+            /* ハートビートメッセージを処理 */
+            if (msg.length == WG_KEY_LEN) {
+                renew_client_lease(msg.data);
+            } else {
+                log_message(LOG_WARN, "Invalid heartbeat message length");
+            }
         } else {
             log_message(LOG_WARN, "Unknown message type: %d", msg.type);
         }

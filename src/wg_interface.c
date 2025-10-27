@@ -101,6 +101,20 @@ int wg_add_peer(const char *interface, const wg_peer_t *peer) {
     return execute_command_args(argv);
 }
 
+int wg_remove_peer(const char *interface, const uint8_t *public_key) {
+    if (!interface || !public_key) {
+        return -1;
+    }
+
+    char pubkey_b64[256];
+    key_to_base64(public_key, pubkey_b64, sizeof(pubkey_b64));
+
+    log_message(LOG_INFO, "Removing peer from interface %s", interface);
+
+    char *argv[] = {"wg", "set", (char *)interface, "peer", pubkey_b64, "remove", NULL};
+    return execute_command_args(argv);
+}
+
 int wg_set_interface_ip(const char *interface, const char *ip_addr, int prefix_len) {
     if (!interface || !ip_addr) {
         return -1;

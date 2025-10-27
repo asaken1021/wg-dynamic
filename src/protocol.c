@@ -46,6 +46,11 @@ int pack_server_config(protocol_message_t *msg, const client_config_t *config) {
     memcpy(ptr + offset, &port_net, sizeof(uint16_t));
     offset += sizeof(uint16_t);
 
+    /* ハートビート間隔 */
+    uint32_t interval_net = htonl(config->heartbeat_interval);
+    memcpy(ptr + offset, &interval_net, sizeof(uint32_t));
+    offset += sizeof(uint32_t);
+
     msg->length = offset;  /* ホストバイトオーダーで保持 */
 
     return 0;
@@ -58,6 +63,18 @@ int pack_config_ack(protocol_message_t *msg) {
 
     msg->type = MSG_CONFIG_ACK;
     msg->length = 0;
+
+    return 0;
+}
+
+int pack_heartbeat(protocol_message_t *msg, const uint8_t *pubkey) {
+    if (!msg || !pubkey) {
+        return -1;
+    }
+
+    msg->type = MSG_HEARTBEAT;
+    msg->length = WG_KEY_LEN;
+    memcpy(msg->data, pubkey, WG_KEY_LEN);
 
     return 0;
 }
