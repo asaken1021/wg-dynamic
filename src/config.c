@@ -7,6 +7,60 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <ctype.h>
+
+/* コンマ区切りの文字列から各項目の前後のスペースを削除 */
+static void trim_comma_separated_values(char *str) {
+    if (!str || *str == '\0') {
+        return;
+    }
+
+    char result[MAX_CONFIG_LINE];
+    char *src = str;
+    char *dst = result;
+    bool in_item = false;
+    char *item_start = NULL;
+
+    while (*src) {
+        if (*src == ',') {
+            /* コンマを見つけたら、現在の項目の末尾スペースを削除 */
+            if (item_start) {
+                /* 項目の末尾スペースを削除 */
+                while (dst > item_start && (*(dst-1) == ' ' || *(dst-1) == '\t')) {
+                    dst--;
+                }
+            }
+            *dst++ = ',';
+            in_item = false;
+            item_start = NULL;
+            src++;
+        } else if (*src == ' ' || *src == '\t') {
+            if (in_item) {
+                /* 項目内のスペースは保持（末尾スペースは後で削除） */
+                *dst++ = *src;
+            }
+            /* 項目外のスペースはスキップ */
+            src++;
+        } else {
+            /* 通常の文字 */
+            if (!in_item) {
+                in_item = true;
+                item_start = dst;
+            }
+            *dst++ = *src++;
+        }
+    }
+
+    /* 最後の項目の末尾スペースを削除 */
+    if (item_start) {
+        while (dst > item_start && (*(dst-1) == ' ' || *(dst-1) == '\t')) {
+            dst--;
+        }
+    }
+
+    *dst = '\0';
+    strcpy(str, result);
+}
 
 void init_default_config(server_config_t *config) {
     if (!config) {
@@ -71,8 +125,15 @@ int load_server_config(const char *filepath, server_config_t *config) {
         while (*key == ' ' || *key == '\t') key++;
         while (*value == ' ' || *value == '\t') value++;
 
+        /* keyの末尾の空白を削除 */
+        char *end = key + strlen(key) - 1;
+        while (end > key && (*end == ' ' || *end == '\t')) {
+            *end = '\0';
+            end--;
+        }
+
         /* valueの末尾の空白と改行を削除 */
-        char *end = value + strlen(value) - 1;
+        end = value + strlen(value) - 1;
         while (end > value && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) {
             *end = '\0';
             end--;
@@ -90,6 +151,8 @@ int load_server_config(const char *filepath, server_config_t *config) {
         } else if (strcmp(key, "client_ip_pool") == 0) {
             strncpy(config->client_ip_pool, value, sizeof(config->client_ip_pool) - 1);
         } else if (strcmp(key, "allowed_ips") == 0) {
+            /* コンマ区切りの値からスペースを削除 */
+            trim_comma_separated_values(value);
             strncpy(config->allowed_ips, value, sizeof(config->allowed_ips) - 1);
         } else if (strcmp(key, "server_privkey") == 0) {
             /* 空の値でない場合のみ読み込む */
